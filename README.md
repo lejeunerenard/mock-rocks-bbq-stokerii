@@ -1,6 +1,6 @@
 # Mock Rock's BBQ Stoker II
 
-This library and accompanying CLI emulates a Rock's BBQ Stoker II unit for testing purposes.
+This library emulates a Rock's BBQ Stoker II unit for testing purposes.
 
 ## Usage
 
@@ -38,7 +38,14 @@ Create a new mock stoker with the provided `sensors`.
 
 ## CLI
 
-A CLI is provided for each mocking of the stoker II.
+There is a CLI for easy mocking of the Stoker II as a separate process.
+
+```console
+mock-rocks-bbq-stokerii
+```
+
+See the [repo](https://github.com/lejeunerenard/mock-rocks-bbq-stokerii-cli) for
+instructions to install.
 
 ## Links
 
