@@ -1,10 +1,6 @@
 {
   "name": "mock-rocks-bbq-stokerii",
   "main": "index.js",
-  "pear": {
-    "name": "mock-rocks-bbq-stokerii",
-    "type": "terminal"
-  },
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
