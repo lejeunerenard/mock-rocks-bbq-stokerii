@@ -1,0 +1,27 @@
+{
+  "name": "mock-rocks-bbq-stokerii",
+  "main": "index.js",
+  "pear": {
+    "name": "mock-rocks-bbq-stokerii",
+    "type": "terminal"
+  },
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "pear run -d ./cli",
+    "test": "brittle test/*.test.js"
+  },
+  "devDependencies": {
+    "brittle": "^3.0.0",
+    "pear-interface": "^1.0.0"
+  },
+  "dependencies": {
+    "bare-http1": "^4.0.4"
+  },
+  "imports": {
+    "http": {
+      "bare": "bare-http1",
+      "default": "http"
+    }
+  }
+}
