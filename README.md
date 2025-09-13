@@ -20,11 +20,11 @@ stoker.listen(80, '0.0.0.0')
 
 ## API
 
-#### `const stoker = new StokerII(sensors: Array<Sensors>)`
+#### `const stoker = new StokerII(sensors: Array<Sensor>)`
 
 Create a new mock stoker with the provided `sensors`.
 
-Sensors have the following structure:
+`Sensor`s have the following structure:
 
 ```
 {
