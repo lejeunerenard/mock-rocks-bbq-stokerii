@@ -36,6 +36,36 @@ Create a new mock stoker with the provided `sensors`.
 }
 ```
 
+Possible `type` values for `current`:
+
+- `fixed`  
+  Returns the provided `value` every request. For example the following always
+  returns `150`:
+  ```
+  {
+    name: 'Foo',
+    target: 350,
+    current: {
+      type: 'fixed',
+      value: 150
+    }
+  }
+  ```
+- `increment`  
+  Returns a value starting at `value` and incrementing by `amount` every time.
+  For example the following returns `150`, `157`, `164` etc:
+  ```
+  {
+    name: 'Foo',
+    target: 350,
+    current: {
+      type: 'increment',
+      value: 150,
+      amount: 7
+    }
+  }
+  ```
+
 ## CLI
 
 There is a CLI for easy mocking of the Stoker II as a separate process.
