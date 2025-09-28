@@ -75,3 +75,61 @@ test('basic - can request stoker json', async (t) => {
     client.end()
   })
 })
+
+test('basic - sensor current - increment', async (t) => {
+  t.plan(2)
+  const stoker = new StokerII([
+    {
+      name: 'sensor',
+      target: 250,
+      current: {
+        type: 'increment',
+        value: 230,
+        amount: 5
+      }
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1338
+  stoker.listen(port, async () => {
+    const request = () => {
+      return new Promise((resolve) => {
+        const client = http.request({ port, path: '/stoker.json' }, (res) => {
+          let json = ''
+
+          res.on('end', () => {
+            resolve(JSON.parse(json))
+          }).on('data', (chunk) => {
+            json += chunk
+          })
+        })
+
+        client.end()
+      })
+    }
+
+    const res1 = await request()
+    t.alike(res1, {
+      stoker: {
+        sensors: [{
+          name: 'sensor',
+          ta: 250,
+          tc: 230
+        }]
+      }
+    }, 'received json for sensor')
+
+    const res2 = await request()
+    t.alike(res2, {
+      stoker: {
+        sensors: [{
+          name: 'sensor',
+          ta: 250,
+          tc: 235
+        }]
+      }
+    }, 'received json for sensor')
+  })
+})

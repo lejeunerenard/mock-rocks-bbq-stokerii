@@ -4,6 +4,11 @@ const sensorCurrent = (current) => {
   switch (current.type) {
     case 'fixed':
       return current.value
+    case 'increment':
+      current.previous = current.previous || (current.value - current.amount)
+      const nextValue = current.previous + current.amount
+      current.previous = nextValue
+      return nextValue
   }
 }
 
