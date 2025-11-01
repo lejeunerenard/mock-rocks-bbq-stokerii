@@ -133,3 +133,44 @@ test('basic - sensor current - increment', async (t) => {
     }, 'received json for sensor')
   })
 })
+
+// TODO This may not be how the stokerii reports errors, but configuring sensors is outside of it's functionality.
+test('basic - sensor current - increment', async (t) => {
+  t.plan(1)
+  const stoker = new StokerII([
+    {
+      name: 'sensor',
+      target: 250,
+      current: {
+        type: 'increment',
+        value: 200
+      }
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1339
+  stoker.listen(port, async () => {
+    const request = () => {
+      return new Promise((resolve) => {
+        const client = http.request({ port, path: '/stoker.json' }, (res) => {
+          let json = ''
+
+          res.on('end', () => {
+            resolve(JSON.parse(json))
+          }).on('data', (chunk) => {
+            json += chunk
+          })
+        })
+
+        client.end()
+      })
+    }
+
+    const res = await request()
+    t.alike(res, {
+      error: 'increment must defined both a value & amount'
+    })
+  })
+})
