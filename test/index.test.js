@@ -2,12 +2,6 @@ import test from 'brittle'
 import StokerII from '../index.js'
 import http from 'http'
 
-const createClient = (port) => {
-  http.request({ port }, (res) => {
-
-  })
-}
-
 test('basic - set sensors', (t) => {
   const initialSensor = {
     name: 'sensor1',
