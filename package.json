@@ -10,12 +10,22 @@
     "brittle": "^3.0.0"
   },
   "dependencies": {
-    "bare-http1": "^4.0.4"
+    "bare-http1": "^4.0.4",
+    "bare-crypto": "^1.12.0",
+    "bare-url": "^2.5.8"
   },
   "imports": {
     "http": {
       "bare": "bare-http1",
-      "default": "http"
+      "default": "node:http"
+    },
+    "crypto": {
+      "bare": "bare-crypto",
+      "default": "node:crypto"
+    },
+    "url": {
+      "bare": "bare-url",
+      "default": "node:url"
     }
   }
 }
