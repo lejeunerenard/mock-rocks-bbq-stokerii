@@ -906,7 +906,7 @@ test('basic - sensor current - not fixed or increment', async (t) => {
   const port = 1355
   stoker.listen(port, async () => {
     t.alike(await getStokerJson(port), {
-      error: 'current must be fixed or increment'
+      error: 'current must be one of fixed, increment, thermal'
     }, 'unknown current type reported')
   })
 })
@@ -926,7 +926,7 @@ test('basic - sensor current - no current', async (t) => {
   const port = 1356
   stoker.listen(port, async () => {
     t.alike(await getStokerJson(port), {
-      error: 'current must be fixed or increment'
+      error: 'current must be one of fixed, increment, thermal'
     }, 'missing current reported')
   })
 })
@@ -956,5 +956,1060 @@ test('basic - post handler - empty form keeps configuration', async (t) => {
         }]
       }
     }, 'empty form is a no-op')
+  })
+})
+
+test('basic - sensor current - thermal rise decelerates', async (t) => {
+  t.plan(3)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 70,
+        ambient: 45
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1358
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 70,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'first report is the set temperature')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 116.3,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'rises 46.3 while the blower runs')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 151,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'rises 34.7, slower than the previous rise')
+  })
+})
+
+test('basic - sensor current - thermal crossing cuts the blower', async (t) => {
+  t.plan(3)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 249,
+        ambient: 45
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1359
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 249,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'blower runs under target')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 250.5,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'crossing target turns the blower off')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 209.4,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'the cooled reading has the blower running again')
+  })
+})
+
+test('basic - sensor current - thermal glide toward ambient', async (t) => {
+  t.plan(3)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      current: {
+        type: 'thermal',
+        value: 150,
+        ambient: 40,
+        cool: 0.5
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1360
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 150,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'nothing reheats an unassigned probe')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 95,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'glides toward ambient')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 67.5,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'still above ambient')
+  })
+})
+
+test('basic - sensor current - thermal cool of zero reaches ambient floor', async (t) => {
+  t.plan(3)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      current: {
+        type: 'thermal',
+        value: 150,
+        ambient: 40,
+        cool: 0
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1361
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 150,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'first report is the set temperature')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 40,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'cool of zero collapses the whole gap in one report')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 40,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'ambient is settled, not drifted through')
+  })
+})
+
+test('basic - sensor current - thermal under ambient pins at ambient', async (t) => {
+  t.plan(3)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      current: {
+        type: 'thermal',
+        value: 30,
+        ambient: 45
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1362
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 30,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'a reading set under ambient reports what it was set to')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 45,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'it warms to ambient rather than away from it')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 45,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'and pins there')
+  })
+})
+
+// TODO verify with the actual device if its possible to share the blower between 2+ sensors
+test('basic - sensor current - thermal probes sharing a blower share the fan state', async (t) => {
+  t.plan(3)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Prime_Rib',
+      target: 135,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 120,
+        ambient: 100,
+        heat: 0.9,
+        cool: 0.5
+      }
+    },
+    {
+      id: '5111111111111111',
+      name: 'Brisket',
+      target: 135,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 150,
+        ambient: 100,
+        heat: 0.9,
+        cool: 0.5
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1363
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Prime_Rib',
+          al: 0,
+          ta: 135,
+          th: null,
+          tl: null,
+          tc: 120,
+          blower: '500000002BEE5C3A'
+        }, {
+          id: '5111111111111111',
+          name: 'Brisket',
+          al: 0,
+          ta: 135,
+          th: null,
+          tl: null,
+          tc: 150,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'the blower runs because some probe on it is under target')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Prime_Rib',
+          al: 0,
+          ta: 135,
+          th: null,
+          tl: null,
+          tc: 138,
+          blower: '500000002BEE5C3A'
+        }, {
+          id: '5111111111111111',
+          name: 'Brisket',
+          al: 0,
+          ta: 135,
+          th: null,
+          tl: null,
+          tc: 141,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'the probe over target heats too, driven by the shared fan state')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Prime_Rib',
+          al: 0,
+          ta: 135,
+          th: null,
+          tl: null,
+          tc: 119,
+          blower: '500000002BEE5C3A'
+        }, {
+          id: '5111111111111111',
+          name: 'Brisket',
+          al: 0,
+          ta: 135,
+          th: null,
+          tl: null,
+          tc: 120.5,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'both over target together cut the blower, then both glide back')
+  })
+})
+
+test('basic - sensor current - thermal without ambient', async (t) => {
+  t.plan(1)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 70
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1364
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      error: 'thermal must define a value & ambient'
+    }, 'thermal without ambient reported')
+  })
+})
+
+test('basic - sensor current - thermal cool out of range', async (t) => {
+  t.plan(1)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      current: {
+        type: 'thermal',
+        value: 150,
+        ambient: 40,
+        cool: 1
+      }
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1365
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      error: 'thermal cool must be between 0 & 1'
+    }, 'cool of 1 reported instead of freezing the probe')
+  })
+})
+
+test('basic - sensor current - thermal post handler does not advance', async (t) => {
+  t.plan(3)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 70,
+        ambient: 45
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1366
+  stoker.listen(port, async () => {
+    t.is(await postForm(port, 'ta5D000012BCE31030=250.0'), submit, 'stoker submitted the target')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 70,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'the post handler leaves the thermal current unadvanced')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 116.3,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'the first get advances it once')
+  })
+})
+
+test('basic - sensor current - thermal reports one decimal', async (t) => {
+  t.plan(2)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 70.256,
+        ambient: 45
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1367
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 70.3,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'the set temperature is rounded to the device precision')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 116.5,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'the next step advances from the rounded reading')
+  })
+})
+
+test('basic - sensor current - thermal hovers and cuts the blower twice', async (t) => {
+  t.plan(4)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 249,
+        ambient: 45,
+        heat: 0.9
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1368
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 249,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'blower runs under target')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 254.4,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'the overshoot of 5 is what lets a running probe cut the blower')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 212.5,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'the glided reading is under target so the blower runs again')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 250.8,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'and the probe cuts it a second time')
+  })
+})
+
+test('basic - sensor current - thermal probe assigned to an unconfigured blower', async (t) => {
+  t.plan(2)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      blower: '5FFFFFFFFFFFFFFF',
+      current: {
+        type: 'thermal',
+        value: 150,
+        ambient: 40,
+        cool: 0.5
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1369
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 150,
+          blower: '5FFFFFFFFFFFFFFF'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'an assignment to an id the stoker does not have runs nothing')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Pit_Temp',
+          al: 0,
+          ta: 250,
+          th: null,
+          tl: null,
+          tc: 95,
+          blower: '5FFFFFFFFFFFFFFF'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'the reading glides toward ambient rather than rising')
+  })
+})
+
+test('basic - sensor current - thermal heat is not a number', async (t) => {
+  t.plan(1)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Pit_Temp',
+      target: 250,
+      blower: '500000002BEE5C3A',
+      current: {
+        type: 'thermal',
+        value: 150,
+        ambient: 40,
+        heat: NaN
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1370
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      error: 'thermal heat must be a number'
+    }, 'a non-number knob reported instead of a tc that prints null')
+  })
+})
+
+test('basic - post handler - thermal probe assigned and unassigned over http', async (t) => {
+  t.plan(5)
+  const stoker = new StokerII([
+    {
+      id: '5D000012BCE31030',
+      name: 'Meat_Probe',
+      target: 165,
+      current: {
+        type: 'thermal',
+        value: 73,
+        ambient: 45,
+        cool: 0.75
+      }
+    }
+  ], [
+    {
+      id: '500000002BEE5C3A',
+      name: 'Firebox'
+    }
+  ])
+
+  t.teardown(() => stoker.close())
+
+  const port = 1371
+  stoker.listen(port, async () => {
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Meat_Probe',
+          al: 0,
+          ta: 165,
+          th: null,
+          tl: null,
+          tc: 73,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'the reading only glides while nothing is set to the blower')
+
+    t.is(await postForm(port, 'sw5D000012BCE31030=500000002BEE5C3A'), submit, 'stoker submitted the assignment')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Meat_Probe',
+          al: 0,
+          ta: 165,
+          th: null,
+          tl: null,
+          tc: 97.3,
+          blower: '500000002BEE5C3A'
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 1
+        }]
+      }
+    }, 'the reading rises under the fan the previous report implied')
+
+    t.is(await postForm(port, 'sw5D000012BCE31030=None'), submit, 'stoker submitted the unassignment')
+
+    t.alike(await getStokerJson(port), {
+      stoker: {
+        sensors: [{
+          id: '5D000012BCE31030',
+          name: 'Meat_Probe',
+          al: 0,
+          ta: 165,
+          th: null,
+          tl: null,
+          tc: 84.2,
+          blower: null
+        }],
+        blowers: [{
+          id: '500000002BEE5C3A',
+          name: 'Firebox',
+          on: 0
+        }]
+      }
+    }, 'unassigned over the wire it starts gliding to ambient')
   })
 })

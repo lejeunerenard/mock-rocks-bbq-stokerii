@@ -16,36 +16,65 @@ const probeFields = {
 
 const nextId = () => `5${crypto.randomBytes(8).toString('hex').slice(1).toUpperCase()}`
 
-const sensorCurrent = (current) => {
+const currentTypes = ['fixed', 'increment', 'thermal']
+
+const round = (value) => Math.round(value * 10) / 10
+
+const knobValidation = (value, name, fallback) => {
+  if (value === undefined) return fallback
+  if (!Number.isFinite(value)) throw Error(`thermal ${name} must be a number`)
+  return value
+}
+
+const sensorCurrent = (sensor, reading, blowerRunning) => {
+  const current = sensor.current
   switch (current.type) {
-    case 'fixed':
+    case 'fixed': {
       return current.value
-    case 'increment':
+    }
+    case 'increment': {
       if (current.amount === undefined || current.value === undefined) throw Error('increment must defined both a value & amount')
-      current.previous = current.previous || (current.value - current.amount)
-      const nextValue = current.previous + current.amount
-      current.previous = nextValue
-      return nextValue
-    default:
-      throw Error('current must be fixed or increment')
+      if (reading === undefined) return current.value
+      return reading + current.amount
+    }
+    case 'thermal': {
+      if (current.value === undefined || current.ambient === undefined) throw Error('thermal must define a value & ambient')
+      if (!Number.isFinite(current.value) || !Number.isFinite(current.ambient)) throw Error('thermal value & ambient must be numbers')
+
+      const ambient = current.ambient
+      const heat = knobValidation(current.heat, 'heat', 0.25)
+      const cool = knobValidation(current.cool, 'cool', 0.8)
+      const overshoot = knobValidation(current.overshoot, 'overshoot', 5)
+
+      if (!(cool >= 0 && cool < 1)) throw Error('thermal cool must be between 0 & 1')
+
+      if (reading === undefined) return round(current.value)
+
+      const peak = sensor.target + overshoot
+      const value = blowerRunning ? reading + (peak - reading) * heat : ambient + (reading - ambient) * cool
+      return round(Math.max(ambient, value))
+    }
+    default: {
+      throw Error(`current must be one of ${currentTypes.join(', ')}`)
+    }
   }
 }
 
-const processSensor = (sensor) => ({
+const processSensor = (sensor, tc) => ({
   id: sensor.id,
   name: sensor.name,
   al: sensor.alarm ?? 0,
   ta: sensor.target,
   th: sensor.high ?? null,
   tl: sensor.low ?? null,
-  tc: sensorCurrent(sensor.current),
+  tc,
   blower: sensor.blower ?? null
 })
 
-const processBlower = (blower, sensors) => ({
+const processBlower = (blower, running) => ({
   id: blower.id,
   name: blower.name ?? blower.id,
-  on: Number(sensors.some((sensor) => sensor.blower === blower.id && sensor.tc < sensor.ta))
+  on: Number(running)
 })
 
 const readForm = (request) => {
@@ -73,6 +102,8 @@ export const submit = `
 </HTML>
 `
 
+const reported = (sensor, readings) => readings.get(sensor.id)
+
 const sendSubmit = (response) => {
   response.statusCode = 200
   response.setHeader('Content-Type', 'text/html')
@@ -89,6 +120,7 @@ export default class StokerII {
   constructor (sensors = [], blowers = []) {
     this.sensors = sensors.map((sensor) => ({ id: nextId(), ...sensor, current: { ...sensor.current } }))
     this.blowers = blowers.map((blower) => ({ id: nextId(), ...blower }))
+    this.readings = new Map()
 
     const server = http.createServer(async (request, response) => {
       try {
@@ -123,13 +155,30 @@ export default class StokerII {
   }
 
   config () {
-    const sensors = this.sensors.map(processSensor)
+    const previous = this.readings
+    const driven = this.runningBlowers(previous)
+    const readings = new Map()
+    const rows = this.sensors.map((sensor) => {
+      const tc = sensorCurrent(sensor, reported(sensor, previous), driven.has(sensor.blower))
+      readings.set(sensor.id, tc)
+      return processSensor(sensor, tc)
+    })
+    this.readings = readings
+    const running = this.runningBlowers(readings)
     return {
       stoker: {
-        sensors: sensors.length ? sensors : null,
-        blowers: this.blowers.map((blower) => processBlower(blower, sensors))
+        sensors: rows.length ? rows : null,
+        blowers: this.blowers.map((blower) => processBlower(blower, running.has(blower.id)))
       }
     }
+  }
+
+  runningBlowers (readings) {
+    return new Set(this.blowers.filter((blower) => this.sensors.some((sensor) => sensor.blower === blower.id && this.showing(sensor, readings) < sensor.target)).map((blower) => blower.id))
+  }
+
+  showing (sensor, readings) {
+    return reported(sensor, readings) ?? sensor.current.value
   }
 
   addSensor (name, opts = {}) {

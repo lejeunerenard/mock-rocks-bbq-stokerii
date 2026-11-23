@@ -98,6 +98,39 @@ Possible `type` values for `current`:
   ```
   A current advances once per request that reports it, and the `POST /stoker.Post_Handler`
   that configures a probe does not report one, so the first `GET` reports the `value` set.
+- `thermal`  
+  Emulates a probe the blower drives: while a blower set to the probe runs, the reading moves
+  `heat` of the way to `ta + overshoot`, and while it is off the reading keeps `cool` of its
+  gap above `ambient`, so the rise decelerates as it nears `ta + overshoot` and the fall glides
+  down toward `ambient` until the reading is back under `ta` and the blower runs again. For
+  example the following returns `70.3`, `116.5`, `151.1` etc, each rise slower than the last:
+  ```
+  {
+    name: 'Pit_Temp',
+    target: 250,
+    blower: '500000002BEE5C3A',
+    current: {
+      type: 'thermal',
+      value: 70.256,
+      ambient: 45
+    }
+  }
+  ```
+  A `thermal` reading is reported to one decimal, the device's own precision, so the next step
+  advances from the rounded value. `value` and `ambient` are required, `heat` defaults to `0.25`,
+  `cool` to `0.8` and `overshoot` to `5`, and the `blower` has to name a blower the stoker has,
+  added with `addBlower` or `n2<id>`: a probe set to an id it does not have drives nothing and
+  the reading only glides.
+
+  `cool` is from `0` up to but not including `1`, `0` collapsing the whole gap and landing the
+  reading on `ambient` in one request, while `1` or more is an error rather than a probe that
+  freezes or heats with the blower off. `ambient` is the floor the probe glides to, and a
+  reading set below `ambient` is pulled up to it and stays there. A probe set to a blower hovers
+  between the cut above `ta` and the dip that follows it rather than settling at
+  `ta + overshoot`, and only slides down to `ambient` once no blower is set to it. A missing or
+  non-number `value`, `ambient`, `heat`, `cool` or `overshoot`, or a `cool` outside its range,
+  is reported as an error for the request, e.g. `thermal cool must be a number`, rather than as
+  a `null` reading.
 
 #### `stoker.addSensor(name, opts)`
 
@@ -149,7 +182,11 @@ The blower reports `on` while that probe reads under its `ta`:
 $ curl http://localhost:80/stoker.json
 { "stoker": { "sensors": [ { "id": "5D000012BCE31030", "name": "Meat_Probe", "al": 0, "ta": 165.0, "th": 155.0, "tl": 32.0, "tc": 73.0, "blower": "500000002BEE5C3A" } ], "blowers": [ { "id": "500000002BEE5C3A", "name": "500000002BEE5C3A", "on": 1 } ] } }
 ```
-```
+
+A `thermal` reading moves under the fan the previous report implied, while `on` in a row is
+derived from the `tc` in that row, so `on` is `1` whenever some probe set to the blower reports
+`tc` under `ta`: a row that has just come back under target is already blowing again. The
+assignment itself is not lagged, the next request uses whatever `sw` last set.
 
 ## CLI
 
